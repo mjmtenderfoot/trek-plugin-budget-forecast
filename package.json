@@ -1,0 +1,22 @@
+{
+  "name": "trek-plugin-budget-forecast",
+  "version": "1.0.0",
+  "description": "Production-ready trip budget forecasting plugin for TREK",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "npx trek-plugin-sdk dev",
+    "validate": "npx trek-plugin-sdk validate",
+    "pack": "npx trek-plugin-sdk pack",
+    "status": "npx trek-plugin-sdk status",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": ["trek", "plugin", "budget", "forecast", "travel"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "trek-plugin-sdk": "latest"
+  }
+}

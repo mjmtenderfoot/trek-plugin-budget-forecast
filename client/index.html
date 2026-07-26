@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Budget Forecast</title>
+  <!-- trek:ui -->
+  <style>
+    :root { --gap: 12px; --radius: 8px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; padding: var(--gap); max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: var(--gap); }
+    h2 { font-size: 1.1rem; margin: var(--gap) 0 8px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--gap); margin-bottom: calc(var(--gap) * 2); }
+    .card { padding: 16px; border-radius: var(--radius); }
+    .card .label { font-size: 0.75rem; opacity: 0.7; margin-bottom: 4px; }
+    .card .value { font-size: 1.3rem; font-weight: 700; }
+    .card .sub { font-size: 0.7rem; opacity: 0.5; margin-top: 2px; }
+    .card.over { border-left: 3px solid var(--trek-danger, #e74c3c); }
+    .tabs { display: flex; gap: 4px; margin-bottom: var(--gap); flex-wrap: wrap; }
+    .tabs button { padding: 6px 14px; border: none; border-radius: var(--radius); cursor: pointer; font-size: 0.85rem; background: var(--trek-surface, #f0f0f0); }
+    .tabs button.active { background: var(--trek-accent, #3b82f6); color: #fff; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: var(--gap); }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--trek-border, #e0e0e0); }
+    th { font-weight: 600; font-size: 0.75rem; text-transform: uppercase; opacity: 0.7; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; }
+    .badge-considering { background: #e0e7ff; color: #3730a3; }
+    .badge-estimated { background: #fef3c7; color: #92400e; }
+    .badge-reserved { background: #dbeafe; color: #1e40af; }
+    .badge-committed { background: #d1fae5; color: #065f46; }
+    .badge-incurred { background: #f3f4f6; color: #374151; }
+    .badge-cancelled { background: #fee2e2; color: #991b1b; text-decoration: line-through; }
+    .badge-credit { background: #d1fae5; color: #065f46; }
+    .badge-planned_expense { background: #e0e7ff; color: #3730a3; }
+    .badge-actual_expense { background: #fef3c7; color: #92400e; }
+    .badge-account_payment { background: #f3f4f6; color: #374151; }
+    .actions { display: flex; gap: 4px; }
+    .btn { padding: 4px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+    .btn-primary { background: var(--trek-accent, #3b82f6); color: #fff; }
+    .btn-danger { background: var(--trek-danger, #e74c3c); color: #fff; }
+    .btn-ghost { background: transparent; border: 1px solid var(--trek-border, #ccc); }
+    .toolbar { display: flex; gap: 8px; margin-bottom: var(--gap); flex-wrap: wrap; align-items: center; }
+    .toolbar input, .toolbar select { padding: 6px 10px; border: 1px solid var(--trek-border, #ccc); border-radius: 4px; font-size: 0.85rem; }
+    .empty { text-align: center; padding: 40px; opacity: 0.5; }
+    .cat-bar { height: 8px; border-radius: 4px; background: var(--trek-surface, #e5e7eb); overflow: hidden; margin-top: 4px; }
+    .cat-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+    .cat-bar-fill.ok { background: var(--trek-accent, #3b82f6); }
+    .cat-bar-fill.warn { background: #f59e0b; }
+    .cat-bar-fill.over { background: var(--trek-danger, #e74c3c); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+    .modal { background: var(--trek-surface, #fff); border-radius: 12px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; }
+    .modal h2 { margin-top: 0; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid var(--trek-border, #ccc); border-radius: 4px; font-size: 0.85rem; }
+    .form-group textarea { min-height: 60px; resize: vertical; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .negative { color: var(--trek-danger, #e74c3c); }
+    .positive { color: var(--trek-success, #10b981); }
+    @media (max-width: 600px) {
+      .cards { grid-template-columns: 1fr 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+      table { font-size: 0.75rem; }
+      th, td { padding: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>💰 Budget Forecast</h1>
+
+  <!-- Summary Cards -->
+  <div class="cards" id="summary-cards"></div>
+
+  <!-- Scenario Tabs -->
+  <div class="tabs" id="scenario-tabs">
+    <button class="active" data-scenario="actual">Actual</button>
+    <button data-scenario="committed">Committed</button>
+    <button data-scenario="full">Full Forecast</button>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <input type="text" id="search" placeholder="Search entries..." aria-label="Search entries">
+    <select id="filter-type" aria-label="Filter by type">
+      <option value="">All Types</option>
+      <option value="planned_expense">Planned Expense</option>
+      <option value="actual_expense">Actual Expense</option>
+      <option value="credit">Credit</option>
+      <option value="account_payment">Account Payment</option>
+    </select>
+    <select id="filter-status" aria-label="Filter by status">
+      <option value="">All Statuses</option>
+      <option value="considering">Considering</option>
+      <option value="estimated">Estimated</option>
+      <option value="reserved">Reserved</option>
+      <option value="committed">Committed</option>
+      <option value="incurred">Incurred</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <button class="btn btn-primary" id="btn-add">+ Add Entry</button>
+    <button class="btn btn-ghost" id="btn-export">📥 Export CSV</button>
+  </div>
+
+  <!-- Entries Table -->
+  <table id="entries-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Amount</th>
+        <th>Category</th>
+        <th>Date</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="entries-body"></tbody>
+  </table>
+
+  <!-- Category Budgets -->
+  <h2>Category Budgets</h2>
+  <div id="category-budgets"></div>
+
+  <!-- Payment Accounts -->
+  <h2>Payment Accounts</h2>
+  <div id="payment-accounts"></div>
+
+  <!-- Modal Container -->
+  <div id="modal-container"></div>
+
+  <script>
+    // ── State ──────────────────────────────────────────────────────────────
+    var state = { tripId: null, entries: [], summary: null, accounts: [], scenario: 'actual' };
+
+    // ── Trek bridge ────────────────────────────────────────────────────────
+    function api(method, path, body) {
+      var opts = { method: method, headers: { 'content-type': 'application/json' } };
+      if (body) opts.body = JSON.stringify(body);
+      return window.trek.invoke(path, opts).then(function(r) { return typeof r === 'string' ? JSON.parse(r) : r; });
+    }
+
+    function formatMoney(minor, currency) {
+      if (minor == null) return '—';
+      var digits = { BIF:0,CLP:0,JPY:0,KRW:0 }[currency] || 2;
+      var v = (minor / Math.pow(10, digits)).toFixed(digits);
+      if (minor < 0) return '-' + currency + ' ' + Math.abs(v);
+      return currency + ' ' + v;
+    }
+
+    function statusLabel(s) {
+      return { considering:'Considering', estimated:'Estimated', reserved:'Reserved', committed:'Committed', incurred:'Incurred', cancelled:'Cancelled' }[s] || s;
+    }
+    function typeLabel(t) {
+      return { planned_expense:'Planned', actual_expense:'Actual', credit:'Credit', account_payment:'Payment' }[t] || t;
+    }
+
+    // ── Render ─────────────────────────────────────────────────────────────
+    function renderSummary() {
+      var s = state.summary;
+      if (!s) return;
+      var c = s.actual || {};
+      var rem = s.remaining || {};
+      var tc = state.tripCurrency || 'USD';
+      var cards = [
+        { label: 'Trip Budget', value: formatMoney(s.budget, s.budgetCurrency || tc), cls: '' },
+        { label: 'Actual Gross', value: formatMoney(c.actualExpenses, tc), cls: '' },
+        { label: 'Actual Credits', value: formatMoney(c.actualCredits, tc), cls: 'positive' },
+        { label: 'Actual Net', value: formatMoney(c.actualNet, tc), cls: '' },
+        { label: 'Committed', value: formatMoney((s.committed||{}).forecast, tc), cls: '' },
+        { label: 'Full Forecast', value: formatMoney((s.fullForecast||{}).forecast, tc), cls: '' },
+        { label: 'Remaining (Actual)', value: rem.actual != null ? formatMoney(rem.actual, tc) : '—', cls: rem.actual != null && rem.actual < 0 ? 'negative' : 'positive' },
+        { label: 'Remaining (Forecast)', value: rem.full != null ? formatMoney(rem.full, tc) : '—', cls: rem.full != null && rem.full < 0 ? 'negative over' : 'positive' },
+      ];
+      var html = '';
+      for (var i = 0; i < cards.length; i++) {
+        var cd = cards[i];
+        html += '<div class="card' + (cd.cls ? ' ' + cd.cls : '') + '"><div class="label">' + cd.label + '</div><div class="value">' + cd.value + '</div></div>';
+      }
+      document.getElementById('summary-cards').innerHTML = html;
+    }
+
+    function renderEntries() {
+      var entries = state.entries;
+      var search = document.getElementById('search').value.toLowerCase();
+      var fType = document.getElementById('filter-type').value;
+      var fStatus = document.getElementById('filter-status').value;
+      var filtered = entries.filter(function(e) {
+        if (fType && e.entry_type !== fType) return false;
+        if (fStatus && e.status !== fStatus) return false;
+        if (search && (e.name||'').toLowerCase().indexOf(search) === -1 && (e.merchant||'').toLowerCase().indexOf(search) === -1) return false;
+        return true;
+      });
+      var tc = state.tripCurrency || 'USD';
+      var html = '';
+      if (filtered.length === 0) {
+        html = '<tr><td colspan="7" class="empty">No entries found. Click "+ Add Entry" to get started.</td></tr>';
+      }
+      for (var i = 0; i < filtered.length; i++) {
+        var e = filtered[i];
+        var amt = e.trip_amount_minor != null ? e.trip_amount_minor : e.amount_minor;
+        var sign = e.entry_type === 'credit' ? -1 : 1;
+        html += '<tr>' +
+          '<td><strong>' + esc(e.name) + '</strong>' + (e.merchant ? '<br><small>' + esc(e.merchant) + '</small>' : '') + '</td>' +
+          '<td><span class="badge badge-' + e.entry_type + '">' + typeLabel(e.entry_type) + '</span></td>' +
+          '<td><span class="badge badge-' + e.status + '">' + statusLabel(e.status) + '</span></td>' +
+          '<td>' + formatMoney(amt * sign, tc) + '</td>' +
+          '<td>' + esc(e.category_name || '—') + '</td>' +
+          '<td>' + esc(e.expected_date || e.actual_date || '—') + '</td>' +
+          '<td class="actions">' +
+            (e.status !== 'incurred' && e.status !== 'cancelled' ? '<button class="btn btn-primary" onclick="convertEntry(\'' + e.id + '\')">Mark Incurred</button>' : '') +
+            (e.status !== 'cancelled' && e.status !== 'incurred' ? '<button class="btn btn-danger" onclick="cancelEntry(\'' + e.id + '\')">Cancel</button>' : '') +
+            '<button class="btn btn-ghost" onclick="editEntry(\'' + e.id + '\')">Edit</button>' +
+          '</td></tr>';
+      }
+      document.getElementById('entries-body').innerHTML = html;
+    }
+
+    function renderCategories() {
+      var cats = (state.summary && state.summary.categories) || [];
+      var tc = state.tripCurrency || 'USD';
+      var html = '';
+      for (var i = 0; i < cats.length; i++) {
+        var c = cats[i];
+        var pct = Math.min(100, Math.abs(c.percentageUsed));
+        var barCls = c.overBudget ? 'over' : (pct > 80 ? 'warn' : 'ok');
+        html += '<div style="margin-bottom:12px;padding:12px;border-radius:8px;">' +
+          '<div style="display:flex;justify-content:space-between;font-size:0.85rem;">' +
+            '<strong>' + esc(c.category) + '</strong>' +
+            '<span>' + formatMoney(c.fullForecast, tc) + ' / ' + formatMoney(c.budget, tc) + ' (' + c.percentageUsed + '%)</span>' +
+          '</div>' +
+          '<div class="cat-bar"><div class="cat-bar-fill ' + barCls + '" style="width:' + pct + '%"></div></div>' +
+          (c.overBudget ? '<div style="font-size:0.75rem;color:var(--trek-danger,#e74c3c);margin-top:4px;">⚠ Over budget by ' + formatMoney(Math.abs(c.remaining), tc) + '</div>' : '') +
+        '</div>';
+      }
+      if (!html) html = '<div class="empty">No category budgets configured.</div>';
+      document.getElementById('category-budgets').innerHTML = html;
+    }
+
+    function renderAccounts() {
+      var accts = state.accounts || [];
+      var tc = state.tripCurrency || 'USD';
+      var html = '';
+      for (var i = 0; i < accts.length; i++) {
+        var a = accts[i];
+        html += '<div style="padding:12px;margin-bottom:8px;border-radius:8px;">' +
+          '<div style="display:flex;justify-content:space-between;">' +
+            '<strong>' + esc(a.name) + '</strong>' +
+            '<span class="badge">' + a.type + (a.lastFour ? ' ••••' + a.lastFour : '') + '</span>' +
+          '</div>' +
+          '<div style="font-size:0.85rem;margin-top:4px;">Outstanding: ' + formatMoney(a.currentOutstanding, a.currency) +
+          ' | Projected: ' + formatMoney(a.projectedOutstanding, a.currency) + '</div>' +
+          (a.creditLimit ? '<div style="font-size:0.75rem;opacity:0.6;">Limit: ' + formatMoney(a.creditLimit, a.currency) + ' | Used: ' + a.percentUsed + '% | Remaining: ' + formatMoney(a.remainingCredit, a.currency) + '</div>' : '') +
+        '</div>';
+      }
+      if (!html) html = '<div class="empty">No payment accounts configured.</div>';
+      document.getElementById('payment-accounts').innerHTML = html;
+    }
+
+    function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+    // ── Actions ────────────────────────────────────────────────────────────
+    function loadSummary() {
+      api('GET', '/summary?tripId=' + state.tripId).then(function(r) {
+        state.summary = r.summary;
+        state.accounts = r.accounts || [];
+        state.tripCurrency = r.tripCurrency;
+        renderSummary(); renderCategories(); renderAccounts();
+      });
+    }
+
+    function loadEntries() {
+      api('GET', '/entries?tripId=' + state.tripId).then(function(r) {
+        state.entries = r.entries || [];
+        renderEntries();
+      });
+    }
+
+    function convertEntry(id) {
+      if (!confirm('Convert this planned expense to an actual TREK cost?')) return;
+      api('POST', '/entries/' + id + '/convert', {}).then(function() { loadSummary(); loadEntries(); });
+    }
+
+    function cancelEntry(id) {
+      if (!confirm('Cancel this entry?')) return;
+      api('POST', '/entries/' + id + '/cancel', {}).then(function() { loadSummary(); loadEntries(); });
+    }
+
+    function editEntry(id) {
+      var entry = state.entries.find(function(e) { return e.id === id; });
+      if (!entry) return;
+      showEntryModal(entry);
+    }
+
+    function showEntryModal(entry) {
+      var isEdit = !!entry;
+      var e = entry || {};
+      var html = '<div class="modal-overlay" onclick="if(event.target===this)closeModal()">' +
+        '<div class="modal"><h2>' + (isEdit ? 'Edit Entry' : 'Add Entry') + '</h2>' +
+        '<div class="form-group"><label>Name *</label><input id="f-name" value="' + esc(e.name || '') + '"></div>' +
+        '<div class="form-row">' +
+          '<div class="form-group"><label>Type *</label><select id="f-type">' +
+            '<option value="planned_expense"' + (e.entry_type === 'planned_expense' ? ' selected' : '') + '>Planned Expense</option>' +
+            '<option value="actual_expense"' + (e.entry_type === 'actual_expense' ? ' selected' : '') + '>Actual Expense</option>' +
+            '<option value="credit"' + (e.entry_type === 'credit' ? ' selected' : '') + '>Credit</option>' +
+            '<option value="account_payment"' + (e.entry_type === 'account_payment' ? ' selected' : '') + '>Account Payment</option>' +
+          '</select></div>' +
+          '<div class="form-group"><label>Status *</label><select id="f-status">' +
+            '<option value="considering"' + (e.status === 'considering' ? ' selected' : '') + '>Considering</option>' +
+            '<option value="estimated"' + (e.status === 'estimated' ? ' selected' : '') + '>Estimated</option>' +
+            '<option value="reserved"' + (e.status === 'reserved' ? ' selected' : '') + '>Reserved</option>' +
+            '<option value="committed"' + (e.status === 'committed' ? ' selected' : '') + '>Committed</option>' +
+          '</select></div>' +
+        '</div>' +
+        '<div class="form-row">' +
+          '<div class="form-group"><label>Amount (minor units) *</label><input type="number" id="f-amount" value="' + (e.amount_minor || '') + '" min="1"></div>' +
+          '<div class="form-group"><label>Currency *</label><input id="f-currency" value="' + esc(e.currency || 'USD') + '" maxlength="3"></div>' +
+        '</div>' +
+        '<div class="form-row">' +
+          '<div class="form-group"><label>Category</label><input id="f-category" value="' + esc(e.category_name || '') + '"></div>' +
+          '<div class="form-group"><label>Expected Date</label><input type="date" id="f-date" value="' + (e.expected_date || '') + '"></div>' +
+        '</div>' +
+        '<div class="form-group"><label>Merchant</label><input id="f-merchant" value="' + esc(e.merchant || '') + '"></div>' +
+        '<div class="form-group"><label>Notes</label><textarea id="f-notes">' + esc(e.notes || '') + '</textarea></div>' +
+        '<div class="modal-actions">' +
+          '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>' +
+          '<button class="btn btn-primary" onclick="saveEntry(\'' + (e.id || '') + '\')">' + (isEdit ? 'Update' : 'Create') + '</button>' +
+        '</div></div></div>';
+      document.getElementById('modal-container').innerHTML = html;
+    }
+
+    function closeModal() { document.getElementById('modal-container').innerHTML = ''; }
+
+    function saveEntry(id) {
+      var body = {
+        name: document.getElementById('f-name').value,
+        entryType: document.getElementById('f-type').value,
+        status: document.getElementById('f-status').value,
+        amountMinor: parseInt(document.getElementById('f-amount').value, 10),
+        currency: document.getElementById('f-currency').value.toUpperCase(),
+        categoryName: document.getElementById('f-category').value || undefined,
+        expectedDate: document.getElementById('f-date').value || undefined,
+        merchant: document.getElementById('f-merchant').value || undefined,
+        notes: document.getElementById('f-notes').value || undefined,
+      };
+      if (!body.name || !body.amountMinor) { alert('Name and amount are required'); return; }
+      var promise = id ? api('PATCH', '/entries/' + id, body) : api('POST', '/entries?tripId=' + state.tripId, body);
+      promise.then(function() { closeModal(); loadSummary(); loadEntries(); }).catch(function(e) { alert('Error: ' + (e.message || 'Unknown')); });
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
+    window.trek.onContext(function(ctx) {
+      state.tripId = ctx.tripId;
+      if (state.tripId) { loadSummary(); loadEntries(); }
+    });
+
+    document.getElementById('btn-add').addEventListener('click', function() { showEntryModal(null); });
+    document.getElementById('btn-export').addEventListener('click', function() { window.open('/export.csv?tripId=' + state.tripId + '&section=entries', '_blank'); });
+    document.getElementById('search').addEventListener('input', renderEntries);
+    document.getElementById('filter-type').addEventListener('change', renderEntries);
+    document.getElementById('filter-status').addEventListener('change', renderEntries);
+
+    var tabBtns = document.querySelectorAll('#scenario-tabs button');
+    for (var i = 0; i < tabBtns.length; i++) {
+      tabBtns[i].addEventListener('click', function() {
+        for (var j = 0; j < tabBtns.length; j++) tabBtns[j].classList.remove('active');
+        this.classList.add('active');
+        state.scenario = this.dataset.scenario;
+      });
+    }
+  </script>
+</body>
+</html>

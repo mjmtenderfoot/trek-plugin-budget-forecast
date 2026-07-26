@@ -1,0 +1,53 @@
+{
+  "id": "budget-forecast",
+  "name": "Budget Forecast",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "author": "mjmtenderfoot",
+  "description": "Production-ready trip budget forecasting — track planned, committed, and actual expenses with multi-currency support, payment accounts, category budgets, and variance reporting.",
+  "homepage": "https://github.com/mjmtenderfoot/trek-plugin-budget-forecast",
+  "license": "MIT",
+  "icon": "TrendingUp",
+  "type": "trip-page",
+  "trek": ">=3.2.0 <4.0.0",
+  "nativeModules": false,
+  "permissions": [
+    "db:own",
+    "db:read:trips",
+    "db:read:costs",
+    "db:write:costs",
+    "db:meta",
+    "rates:read"
+  ],
+  "requiredAddons": [
+    "budget"
+  ],
+  "routes": [
+    { "method": "GET", "path": "/summary", "auth": true },
+    { "method": "GET", "path": "/entries", "auth": true },
+    { "method": "POST", "path": "/entries", "auth": true },
+    { "method": "PATCH", "path": "/entries/:id", "auth": true },
+    { "method": "DELETE", "path": "/entries/:id", "auth": true },
+    { "method": "POST", "path": "/entries/:id/convert", "auth": true },
+    { "method": "POST", "path": "/entries/:id/cancel", "auth": true },
+    { "method": "POST", "path": "/entries/:id/restore", "auth": true },
+    { "method": "POST", "path": "/entries/:id/link-cost", "auth": true },
+    { "method": "POST", "path": "/entries/:id/unlink-cost", "auth": true },
+    { "method": "GET", "path": "/accounts", "auth": true },
+    { "method": "POST", "path": "/accounts", "auth": true },
+    { "method": "PATCH", "path": "/accounts/:id", "auth": true },
+    { "method": "DELETE", "path": "/accounts/:id", "auth": true },
+    { "method": "GET", "path": "/category-budgets", "auth": true },
+    { "method": "POST", "path": "/category-budgets", "auth": true },
+    { "method": "PATCH", "path": "/category-budgets/:id", "auth": true },
+    { "method": "DELETE", "path": "/category-budgets/:id", "auth": true },
+    { "method": "GET", "path": "/native-costs", "auth": true },
+    { "method": "GET", "path": "/reservations", "auth": true },
+    { "method": "GET", "path": "/export.csv", "auth": true }
+  ],
+  "capabilities": {
+    "tripPage": {
+      "position": 10
+    }
+  }
+}
