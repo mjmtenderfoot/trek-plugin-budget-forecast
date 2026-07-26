@@ -133,8 +133,129 @@
     // ── State ──────────────────────────────────────────────────────────────
     var state = { tripId: null, entries: [], summary: null, accounts: [], scenario: 'actual' };
 
-    // ── Trek bridge ────────────────────────────────────────────────────────
+    // ── Trek bridge (standalone fallback with localStorage) ───────────────
+    var isStandalone = !window.trek || !window.trek.invoke;
+    var LS_KEY = 'budget-forecast-demo';
+
+    function loadLocal() {
+      try { return JSON.parse(localStorage.getItem(LS_KEY)) || { entries: [], accounts: [], categoryBudgets: [] }; }
+      catch(e) { return { entries: [], accounts: [], categoryBudgets: [] }; }
+    }
+    function saveLocal(data) { localStorage.setItem(LS_KEY, JSON.stringify(data)); }
+    function genId() { return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16); }); }
+
+    function standaloneApi(method, path, body) {
+      var data = loadLocal();
+      var now = new Date().toISOString();
+      // Parse path
+      if (path.indexOf('/summary') === 0) {
+        var budget = data.budget || null;
+        var budgetCurrency = data.budgetCurrency || 'USD';
+        var actualExp = 0, actualCr = 0, plannedExp = 0, forecastCr = 0, reservedExp = 0, committedExp = 0;
+        data.entries.forEach(function(e) {
+          if (e.deleted_at || e.status === 'cancelled' || !e.include_in_forecast) return;
+          var amt = e.trip_amount_minor || e.amount_minor;
+          if (e.status === 'incurred') {
+            if (e.entry_type === 'actual_expense') actualExp += amt;
+            else if (e.entry_type === 'credit') actualCr += amt;
+          } else {
+            if (e.entry_type === 'planned_expense' || e.entry_type === 'actual_expense') {
+              plannedExp += amt;
+              if (e.status === 'reserved') reservedExp += amt;
+              if (e.status === 'committed') committedExp += amt;
+            } else if (e.entry_type === 'credit') forecastCr += amt;
+          }
+        });
+        var actualNet = actualExp - actualCr;
+        var committedForecast = actualNet + reservedExp + committedExp;
+        var fullForecast = actualNet + plannedExp - forecastCr;
+        return Promise.resolve({
+          summary: {
+            budget: budget, budgetCurrency: budgetCurrency,
+            actual: { actualExpenses: actualExp, actualCredits: actualCr, actualNet: actualNet },
+            committed: { reservedExpenses: reservedExp, committedExpenses: committedExp, forecast: committedForecast },
+            fullForecast: { plannedExpenses: plannedExp, forecastCredits: forecastCr, forecast: fullForecast },
+            remaining: budget ? { actual: budget - actualNet, committed: budget - committedForecast, full: budget - fullForecast } : { actual: null, committed: null, full: null },
+            categories: []
+          },
+          accounts: (data.accounts || []).map(function(a) { return { id: a.id, name: a.name, type: a.account_type, currency: a.currency, lastFour: a.last_four, creditLimit: a.credit_limit_minor, currentOutstanding: 0, projectedOutstanding: 0, remainingCredit: a.credit_limit_minor, percentUsed: 0 }; }),
+          tripCurrency: budgetCurrency
+        });
+      }
+      if (path.indexOf('/entries') === 0 && method === 'GET') {
+        return Promise.resolve({ entries: data.entries.filter(function(e) { return !e.deleted_at; }) });
+      }
+      if (path.indexOf('/entries') === 0 && method === 'POST') {
+        var entry = Object.assign({ id: genId(), created_at: now, updated_at: now, deleted_at: null, include_in_forecast: 1, trip_amount_minor: body.amountMinor }, body);
+        entry.entry_type = body.entryType; entry.category_name = body.categoryName; entry.payment_account_id = body.paymentAccountId;
+        entry.expected_date = body.expectedDate; entry.actual_date = body.actualDate; entry.confirmation_reference = body.confirmationReference;
+        data.entries.push(entry); saveLocal(data);
+        return Promise.resolve({ entry: entry });
+      }
+      if (path.match(/\/entries\/[^/]+$/) && method === 'PATCH') {
+        var id = path.split('/').pop();
+        var idx = data.entries.findIndex(function(e) { return e.id === id; });
+        if (idx === -1) return Promise.reject(new Error('Not found'));
+        Object.assign(data.entries[idx], body, { updated_at: now });
+        if (body.status) data.entries[idx].status = body.status;
+        saveLocal(data);
+        return Promise.resolve({ entry: data.entries[idx] });
+      }
+      if (path.match(/\/entries\/[^/]+$/) && method === 'DELETE') {
+        var id2 = path.split('/').pop();
+        var idx2 = data.entries.findIndex(function(e) { return e.id === id2; });
+        if (idx2 !== -1) { data.entries[idx2].deleted_at = now; saveLocal(data); }
+        return Promise.resolve({ deleted: true });
+      }
+      if (path.match(/\/entries\/[^/]+\/convert/) && method === 'POST') {
+        var id3 = path.split('/')[2];
+        var idx3 = data.entries.findIndex(function(e) { return e.id === id3; });
+        if (idx3 !== -1) { data.entries[idx3].status = 'incurred'; data.entries[idx3].actual_date = now.slice(0,10); data.entries[idx3].updated_at = now; saveLocal(data); }
+        return Promise.resolve({ entry: data.entries[idx3], variance: { amount: 0, percentage: 0, label: 'On estimate' } });
+      }
+      if (path.match(/\/entries\/[^/]+\/cancel/) && method === 'POST') {
+        var id4 = path.split('/')[2];
+        var idx4 = data.entries.findIndex(function(e) { return e.id === id4; });
+        if (idx4 !== -1) { data.entries[idx4].status = 'cancelled'; data.entries[idx4].updated_at = now; saveLocal(data); }
+        return Promise.resolve({ cancelled: true });
+      }
+      if (path.match(/\/entries\/[^/]+\/restore/) && method === 'POST') {
+        var id5 = path.split('/')[2];
+        var idx5 = data.entries.findIndex(function(e) { return e.id === id5; });
+        if (idx5 !== -1) { data.entries[idx5].deleted_at = null; data.entries[idx5].updated_at = now; saveLocal(data); }
+        return Promise.resolve({ restored: true });
+      }
+      if (path.indexOf('/accounts') === 0 && method === 'GET') {
+        return Promise.resolve({ accounts: data.accounts || [] });
+      }
+      if (path.indexOf('/accounts') === 0 && method === 'POST') {
+        var acct = Object.assign({ id: genId(), created_at: now, updated_at: now }, body);
+        acct.account_type = body.accountType; acct.credit_limit_minor = body.creditLimitMinor; acct.last_four = body.lastFour; acct.starting_balance_minor = body.startingBalanceMinor || 0;
+        if (!data.accounts) data.accounts = [];
+        data.accounts.push(acct); saveLocal(data);
+        return Promise.resolve({ account: acct });
+      }
+      if (path.match(/\/accounts\/[^/]+$/) && method === 'DELETE') {
+        var aid = path.split('/').pop();
+        data.accounts = (data.accounts || []).filter(function(a) { return a.id !== aid; });
+        saveLocal(data);
+        return Promise.resolve({ deleted: true });
+      }
+      if (path.indexOf('/category-budgets') === 0 && method === 'GET') {
+        return Promise.resolve({ categoryBudgets: data.categoryBudgets || [] });
+      }
+      if (path.indexOf('/category-budgets') === 0 && method === 'POST') {
+        var cb = Object.assign({ id: genId(), created_at: now, updated_at: now }, body);
+        cb.category_name = body.categoryName; cb.budget_amount_minor = body.budgetAmountMinor;
+        if (!data.categoryBudgets) data.categoryBudgets = [];
+        data.categoryBudgets.push(cb); saveLocal(data);
+        return Promise.resolve({ categoryBudget: cb });
+      }
+      return Promise.resolve({});
+    }
+
     function api(method, path, body) {
+      if (isStandalone) return standaloneApi(method, path, body);
       var opts = { method: method, headers: { 'content-type': 'application/json' } };
       if (body) opts.body = JSON.stringify(body);
       return window.trek.invoke(path, opts).then(function(r) { return typeof r === 'string' ? JSON.parse(r) : r; });
@@ -349,10 +470,16 @@
     }
 
     // ── Init ───────────────────────────────────────────────────────────────
-    window.trek.onContext(function(ctx) {
-      state.tripId = ctx.tripId;
-      if (state.tripId) { loadSummary(); loadEntries(); }
-    });
+    if (isStandalone) {
+      state.tripId = 1;
+      loadSummary();
+      loadEntries();
+    } else {
+      window.trek.onContext(function(ctx) {
+        state.tripId = ctx.tripId;
+        if (state.tripId) { loadSummary(); loadEntries(); }
+      });
+    }
 
     document.getElementById('btn-add').addEventListener('click', function() { showEntryModal(null); });
     document.getElementById('btn-export').addEventListener('click', function() { window.open('/export.csv?tripId=' + state.tripId + '&section=entries', '_blank'); });
